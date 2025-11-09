@@ -1,4 +1,4 @@
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const express = require('express');
 const cors = require('cors');
@@ -33,11 +33,13 @@ async function run() {
       const result = await cursor.toArray();
       res.send(result);
     });
-
+    app.get('/car/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await carCollection.findOne(query);
+      res.send(result);
+    });
     // Send a ping to confirm a successful connection
-
-
-
 
     await client.db('admin').command({ ping: 1 });
     console.log(
