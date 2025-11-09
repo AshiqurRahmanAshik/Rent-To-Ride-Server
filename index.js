@@ -8,7 +8,7 @@ const port = process.env.PORT || 9000;
 const app = express();
 const corsOptions = {
   origin: ['http://localhost:5173', 'http://localhost:5174'],
-  Credentials: true,
+  credentials: true,
   optionsSuccessStatus: 200,
 };
 
@@ -28,6 +28,7 @@ async function run() {
   try {
     const db = client.db('rent_to_rideDB');
     const carCollection = db.collection('cars');
+    const customerCollection = db.collection('bookings');
     app.get('/cars', async (req, res) => {
       const cursor = carCollection.find();
       const result = await cursor.toArray();
@@ -40,7 +41,11 @@ async function run() {
       res.send(result);
     });
     // Send a ping to confirm a successful connection
-
+    app.post('/bookings', async (req, res) => {
+      const booking = req.body;
+      const result = await customerCollection.insertOne(booking);
+      res.send(result);
+    });
     await client.db('admin').command({ ping: 1 });
     console.log(
       'Pinged your deployment. You successfully connected to MongoDB!'
