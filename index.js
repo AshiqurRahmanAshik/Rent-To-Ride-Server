@@ -6,7 +6,7 @@ require('dotenv').config();
 const port = process.env.PORT || 9000;
 const app = express();
 
-// CORS
+// CORS Configuration
 const corsOptions = {
   origin: ['http://localhost:5173', 'http://localhost:5174'],
   credentials: true,
@@ -16,7 +16,7 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// MongoDB URI
+// MongoDB Connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.v4qijov.mongodb.net/?appName=Cluster0`;
 const client = new MongoClient(uri, {
   serverApi: {
@@ -32,7 +32,12 @@ async function run() {
     const carCollection = db.collection('cars');
     const bookingCollection = db.collection('bookings');
 
-    // ✅ Get All Cars
+    // Root route
+    app.get('/', (req, res) => {
+      res.send('🚗 Rent To Ride API is running...');
+    });
+
+    // Get all cars
     app.get('/cars', async (req, res) => {
       try {
         const cars = await carCollection.find().toArray();
@@ -42,7 +47,23 @@ async function run() {
       }
     });
 
-    // ✅ Get Car Details by ID
+    // Get my cars (by providerEmail) ✅ NEW
+    app.get('/my-cars', async (req, res) => {
+      const providerEmail = req.query.providerEmail;
+      if (!providerEmail) {
+        return res.status(400).send({ message: 'providerEmail is required' });
+      }
+
+      try {
+        const cars = await carCollection.find({ providerEmail }).toArray();
+        res.send(cars);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: 'Failed to fetch your cars', error });
+      }
+    });
+
+    // Get car by ID
     app.get('/car/:id', async (req, res) => {
       try {
         const id = req.params.id;
@@ -53,23 +74,61 @@ async function run() {
       }
     });
 
-    // ✅ Get My Listings (Provider’s cars)
-    app.get('/my-cars', async (req, res) => {
-      const providerEmail = req.query.providerEmail;
-      if (!providerEmail) {
-        return res.status(400).send({ message: 'Provider email required' });
-      }
+    // Add new car
+    app.post('/cars', async (req, res) => {
       try {
-        const cars = await carCollection.find({ providerEmail }).toArray();
-        res.send(cars);
+        const car = req.body;
+
+        // Validate provider info
+        if (!car.providerName || !car.providerEmail) {
+          return res
+            .status(400)
+            .send({ message: 'Provider name and email are required' });
+        }
+
+        // Ensure pricePerDay is number
+        car.pricePerDay = Number(car.pricePerDay);
+        car.status = car.status || 'Available'; // default status
+
+        const result = await carCollection.insertOne(car);
+        const savedCar = await carCollection.findOne({
+          _id: result.insertedId,
+        });
+        res.status(201).send(savedCar);
       } catch (error) {
-        res
-          .status(500)
-          .send({ message: 'Failed to fetch provider cars', error });
+        res.status(500).send({ message: 'Failed to add car', error });
       }
     });
 
-    // ✅ Create a Booking + Update Car Status
+    // Update car
+    app.put('/car/:id', async (req, res) => {
+      try {
+        const id = req.params.id;
+        const updatedCar = req.body;
+
+        const result = await carCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedCar }
+        );
+
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to update car', error });
+      }
+    });
+
+    // Delete car
+    app.delete('/car/:id', async (req, res) => {
+      try {
+        const id = req.params.id;
+        const result = await carCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send(result);
+      } catch (error) {
+        res.status(500).send({ message: 'Failed to delete car', error });
+      }
+    });
+
+    // Create booking + update car status
     app.post('/bookings', async (req, res) => {
       const booking = req.body;
       if (!booking.email) {
@@ -79,10 +138,8 @@ async function run() {
       }
 
       try {
-        // Step 1: Insert booking
         const result = await bookingCollection.insertOne(booking);
 
-        // Step 2: Mark car as "Booked"
         await carCollection.updateOne(
           { _id: new ObjectId(booking.carId) },
           { $set: { status: 'Booked' } }
@@ -95,7 +152,7 @@ async function run() {
       }
     });
 
-    // ✅ Get All Bookings (Admin)
+    // Get all bookings
     app.get('/bookings', async (req, res) => {
       try {
         const bookings = await bookingCollection.find().toArray();
@@ -105,12 +162,13 @@ async function run() {
       }
     });
 
-    // ✅ Get My Bookings (Customer)
+    // Get my bookings (customer)
     app.get('/my-bookings', async (req, res) => {
       const customerEmail = req.query.email;
       if (!customerEmail) {
         return res.status(400).send({ message: 'Customer email required' });
       }
+
       try {
         const bookings = await bookingCollection
           .find({ email: customerEmail })
@@ -123,12 +181,11 @@ async function run() {
       }
     });
 
-    // ✅ Delete a Booking (Unbook)
+    // Delete a booking + update car status
     app.delete('/bookings/:id', async (req, res) => {
       try {
         const id = req.params.id;
 
-        // Step 1: Find the booking to get the carId
         const booking = await bookingCollection.findOne({
           _id: new ObjectId(id),
         });
@@ -136,10 +193,8 @@ async function run() {
           return res.status(404).send({ message: 'Booking not found' });
         }
 
-        // Step 2: Delete the booking
         await bookingCollection.deleteOne({ _id: new ObjectId(id) });
 
-        // Step 3: Update the car status to "Available"
         await carCollection.updateOne(
           { _id: new ObjectId(booking.carId) },
           { $set: { status: 'Available' } }
@@ -152,48 +207,17 @@ async function run() {
       }
     });
 
-    // ✅ Delete Car
-    app.delete('/car/:id', async (req, res) => {
-      try {
-        const id = req.params.id;
-        const result = await carCollection.deleteOne({ _id: new ObjectId(id) });
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: 'Failed to delete car', error });
-      }
-    });
-
-    // ✅ Update Car
-    app.put('/car/:id', async (req, res) => {
-      try {
-        const id = req.params.id;
-        const updatedCar = req.body;
-        const result = await carCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: updatedCar }
-        );
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: 'Failed to update car', error });
-      }
-    });
-
-    // ✅ Connect to MongoDB
+    // Test MongoDB connection
     await client.db('admin').command({ ping: 1 });
     console.log('✅ MongoDB connected successfully!');
   } finally {
-    // keep connection open
+    // Keep connection open
   }
 }
 
+// Run backend
 run().catch(console.dir);
 
-// Root route
-app.get('/', (req, res) => {
-  res.send('🚗 Rent To Ride API is running...');
-});
-
-// Start server
 app.listen(port, () => {
   console.log(`🚀 Server is running on port ${port}`);
 });
