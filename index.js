@@ -47,7 +47,7 @@ async function run() {
       }
     });
 
-    // Get my cars (by providerEmail) ✅ NEW
+    // Get my cars (by providerEmail)
     app.get('/my-cars', async (req, res) => {
       const providerEmail = req.query.providerEmail;
       if (!providerEmail) {
@@ -79,16 +79,14 @@ async function run() {
       try {
         const car = req.body;
 
-        // Validate provider info
         if (!car.providerName || !car.providerEmail) {
           return res
             .status(400)
             .send({ message: 'Provider name and email are required' });
         }
 
-        // Ensure pricePerDay is number
         car.pricePerDay = Number(car.pricePerDay);
-        car.status = car.status || 'Available'; // default status
+        car.status = car.status || 'Available';
 
         const result = await carCollection.insertOne(car);
         const savedCar = await carCollection.findOne({
@@ -131,21 +129,45 @@ async function run() {
     // Create booking + update car status
     app.post('/bookings', async (req, res) => {
       const booking = req.body;
-      if (!booking.email) {
+      const { carId, email } = booking;
+
+      if (!email || !carId) {
         return res
           .status(400)
-          .send({ message: 'Email is required for booking' });
+          .send({ message: 'Car ID and user email are required' });
       }
 
       try {
-        const result = await bookingCollection.insertOne(booking);
+        // Get car info
+        const car = await carCollection.findOne({ _id: new ObjectId(carId) });
+        if (!car) return res.status(404).send({ message: 'Car not found' });
 
+        // Prevent booking own car
+        if (car.providerEmail === email) {
+          return res
+            .status(400)
+            .send({ message: 'You cannot book your own car!' });
+        }
+
+        // Create booking
+        const result = await bookingCollection.insertOne({
+          ...booking,
+          carName: car.name,
+          category: car.category,
+          rentPrice: car.pricePerDay,
+          image: car.image,
+          createdAt: new Date(),
+        });
+
+        // Update car status
         await carCollection.updateOne(
-          { _id: new ObjectId(booking.carId) },
+          { _id: new ObjectId(carId) },
           { $set: { status: 'Booked' } }
         );
 
-        res.send({ success: true, message: 'Booking successful', result });
+        res
+          .status(201)
+          .send({ success: true, message: 'Booking successful', result });
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: 'Failed to create booking', error });
@@ -185,16 +207,13 @@ async function run() {
     app.delete('/bookings/:id', async (req, res) => {
       try {
         const id = req.params.id;
-
         const booking = await bookingCollection.findOne({
           _id: new ObjectId(id),
         });
-        if (!booking) {
+        if (!booking)
           return res.status(404).send({ message: 'Booking not found' });
-        }
 
         await bookingCollection.deleteOne({ _id: new ObjectId(id) });
-
         await carCollection.updateOne(
           { _id: new ObjectId(booking.carId) },
           { $set: { status: 'Available' } }
