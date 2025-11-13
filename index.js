@@ -8,8 +8,8 @@ const app = express();
 
 // CORS Configuration
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://localhost:5174'],
-  credentials: true,
+  origin: '*',
+  //credentials: true,
   optionsSuccessStatus: 200,
 };
 
@@ -53,7 +53,6 @@ async function run() {
       if (!providerEmail) {
         return res.status(400).send({ message: 'providerEmail is required' });
       }
-
       try {
         const cars = await carCollection.find({ providerEmail }).toArray();
         res.send(cars);
@@ -67,9 +66,21 @@ async function run() {
     app.get('/car/:id', async (req, res) => {
       try {
         const id = req.params.id;
+
+        // Validate ObjectId
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid car ID' });
+        }
+
         const car = await carCollection.findOne({ _id: new ObjectId(id) });
+
+        if (!car) {
+          return res.status(404).send({ message: 'Car not found' });
+        }
+
         res.send(car);
       } catch (error) {
+        console.error(error);
         res.status(500).send({ message: 'Failed to fetch car', error });
       }
     });
@@ -78,7 +89,6 @@ async function run() {
     app.post('/cars', async (req, res) => {
       try {
         const car = req.body;
-
         if (!car.providerName || !car.providerEmail) {
           return res
             .status(400)
@@ -102,8 +112,11 @@ async function run() {
     app.put('/car/:id', async (req, res) => {
       try {
         const id = req.params.id;
-        const updatedCar = req.body;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid car ID' });
+        }
 
+        const updatedCar = req.body;
         const result = await carCollection.updateOne(
           { _id: new ObjectId(id) },
           { $set: updatedCar }
@@ -119,6 +132,10 @@ async function run() {
     app.delete('/car/:id', async (req, res) => {
       try {
         const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid car ID' });
+        }
+
         const result = await carCollection.deleteOne({ _id: new ObjectId(id) });
         res.send(result);
       } catch (error) {
@@ -139,6 +156,10 @@ async function run() {
 
       try {
         // Get car info
+        if (!ObjectId.isValid(carId)) {
+          return res.status(400).send({ message: 'Invalid car ID' });
+        }
+
         const car = await carCollection.findOne({ _id: new ObjectId(carId) });
         if (!car) return res.status(404).send({ message: 'Car not found' });
 
@@ -207,6 +228,10 @@ async function run() {
     app.delete('/bookings/:id', async (req, res) => {
       try {
         const id = req.params.id;
+        if (!ObjectId.isValid(id)) {
+          return res.status(400).send({ message: 'Invalid booking ID' });
+        }
+
         const booking = await bookingCollection.findOne({
           _id: new ObjectId(id),
         });
@@ -227,7 +252,7 @@ async function run() {
     });
 
     // Test MongoDB connection
-    await client.db('admin').command({ ping: 1 });
+    //  await client.db('admin').command({ ping: 1 });
     console.log('✅ MongoDB connected successfully!');
   } finally {
     // Keep connection open
